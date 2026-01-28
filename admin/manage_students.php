@@ -1,121 +1,218 @@
 <?php
 include('../includes/session.php');
+checkAdminSession();
 include('../includes/db_connect.php');
+include('../includes/header.php');
+include('../includes/sidebar.php');
 
-// ADD student
-if (isset($_POST['add'])) {
+$name = '';
+$roll_no = '';
+$department = '';
+$class_id = '';
+$academic_year_id = '';
+$edit_id = 0;
+$success = '';
+
+// GET CURRENT RUNNING SEMESTER
+function getCurrentSemester($conn, $class_id, $academic_year_id) {
+
+    $ayq = mysqli_query($conn,
+        "SELECT academic_year FROM academic_years WHERE id=$academic_year_id"
+    );
+    $academic_year = mysqli_fetch_assoc($ayq)['academic_year'];
+
+    $q = mysqli_query($conn,
+        "SELECT semester_no
+         FROM semesters
+         WHERE class_id=$class_id
+         AND academic_year='$academic_year'
+         AND start_date <= CURDATE()
+         AND end_date >= CURDATE()
+         LIMIT 1"
+    );
+
+    if (mysqli_num_rows($q) == 0) return 1;
+
+    return mysqli_fetch_assoc($q)['semester_no'];
+}
+
+// SAVE
+if (isset($_POST['save'])) {
+
     $name = $_POST['name'];
-    $roll = $_POST['roll_no'];
-    $dept = $_POST['department'];
-    $class_id = $_POST['class_id'];
-    mysqli_query($conn, "INSERT INTO students (name, roll_no, department, class_id) 
-        VALUES ('$name', '$roll', '$dept', $class_id)");
+    $roll_no = $_POST['roll_no'];
+    $department = $_POST['department'];
+    $class_id = (int)$_POST['class_id'];
+    $academic_year_id = (int)$_POST['academic_year_id'];
+
+    $semester = getCurrentSemester($conn, $class_id, $academic_year_id);
+
+    if (!empty($_POST['edit_id'])) {
+
+        $eid = (int)$_POST['edit_id'];
+
+        mysqli_query($conn,
+            "UPDATE students SET
+                name='$name',
+                roll_no='$roll_no',
+                department='$department',
+                class_id=$class_id,
+                academic_year_id=$academic_year_id,
+                semester=$semester
+             WHERE id=$eid"
+        );
+
+        $success = "Student updated successfully.";
+
+    } else {
+
+        mysqli_query($conn,
+            "INSERT INTO students
+            (name, roll_no, department, class_id, academic_year_id, semester)
+            VALUES
+            ('$name','$roll_no','$department',$class_id,$academic_year_id,$semester)"
+        );
+
+        $success = "Student added successfully.";
+    }
 }
 
-// DELETE student
-if (isset($_GET['del'])) {
-    $id = $_GET['del'];
-    mysqli_query($conn, "DELETE FROM students WHERE id = $id");
+// DELETE
+if (isset($_GET['delete'])) {
+    $did = (int)$_GET['delete'];
+    mysqli_query($conn,"DELETE FROM students WHERE id=$did");
+    $success = "Student deleted.";
 }
 
-// EDIT student
-if (isset($_POST['update'])) {
-    $id = $_POST['id'];
-    $name = $_POST['name'];
-    $roll = $_POST['roll_no'];
-    $dept = $_POST['department'];
-    $class_id = $_POST['class_id'];
-    mysqli_query($conn, "UPDATE students SET name='$name', roll_no='$roll', department='$dept', class_id=$class_id 
-        WHERE id=$id");
-}
-
-// GET class list
-$classes_q = mysqli_query($conn, "SELECT * FROM classes");
-
-// GET students list
-$students_q = mysqli_query($conn, "SELECT s.*, c.name AS class_name FROM students s 
-    JOIN classes c ON s.class_id = c.id ORDER BY s.id DESC");
-
-// For editing
-$edit = false;
+// EDIT
 if (isset($_GET['edit'])) {
-    $edit = true;
-    $id = $_GET['edit'];
-    $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM students WHERE id = $id"));
+
+    $eid = (int)$_GET['edit'];
+    $q = mysqli_query($conn,"SELECT * FROM students WHERE id=$eid");
+    $r = mysqli_fetch_assoc($q);
+
+    $name = $r['name'];
+    $roll_no = $r['roll_no'];
+    $department = $r['department'];
+    $class_id = $r['class_id'];
+    $academic_year_id = $r['academic_year_id'];
+    $edit_id = $r['id'];
 }
 ?>
 
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Manage Students</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body>
-<?php include('../includes/header.php'); include('../includes/sidebar.php'); ?>
+<div class="container-fluid">
+<h4 class="mb-3">Manage Students</h4>
 
-<div class="container mt-4">
-    <h4>👨‍🎓 Manage Students</h4>
+<?php if ($success) { ?>
+<div class="alert alert-success"><?= $success ?></div>
+<?php } ?>
 
-    <form method="post" class="row bg-white shadow-sm p-3 mb-4 rounded">
-        <input type="hidden" name="id" value="<?= $row['id'] ?? '' ?>">
-        <div class="col-md-3">
-            <label>Name</label>
-            <input type="text" name="name" value="<?= $row['name'] ?? '' ?>" class="form-control" required>
-        </div>
-        <div class="col-md-2">
-            <label>Roll No</label>
-            <input type="text" name="roll_no" value="<?= $row['roll_no'] ?? '' ?>" class="form-control" required>
-        </div>
-        <div class="col-md-3">
-            <label>Department</label>
-            <input type="text" name="department" value="<?= $row['department'] ?? '' ?>" class="form-control">
-        </div>
-        <div class="col-md-2">
-            <label>Class</label>
-            <select name="class_id" class="form-select" required>
-                <option value="">Select</option>
-                <?php while ($c = mysqli_fetch_assoc($classes_q)) {
-                    $sel = ($row['class_id'] ?? '') == $c['id'] ? 'selected' : '';
-                    echo "<option value='{$c['id']}' $sel>{$c['name']}</option>";
-                } ?>
-            </select>
-        </div>
-        <div class="col-md-2 mt-4 pt-2">
-            <button name="<?= $edit ? 'update' : 'add' ?>" class="btn btn-<?= $edit ? 'warning' : 'primary' ?>">
-                <?= $edit ? 'Update' : 'Add' ?>
-            </button>
-        </div>
-    </form>
+<form method="post" class="border rounded p-3 mb-4 bg-light">
+<input type="hidden" name="edit_id" value="<?= $edit_id ?>">
 
-    <table class="table table-bordered bg-white shadow-sm">
-        <thead class="table-dark">
-            <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Roll No</th>
-                <th>Department</th>
-                <th>Class</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-        <?php while ($s = mysqli_fetch_assoc($students_q)) { ?>
-            <tr>
-                <td><?= $s['id'] ?></td>
-                <td><?= $s['name'] ?></td>
-                <td><?= $s['roll_no'] ?></td>
-                <td><?= $s['department'] ?></td>
-                <td><?= $s['class_name'] ?></td>
-                <td>
-                    <a href="?edit=<?= $s['id'] ?>" class="btn btn-sm btn-warning">Edit</a>
-                    <a href="?del=<?= $s['id'] ?>" class="btn btn-sm btn-danger"
-                       onclick="return confirm('Delete this student?')">Delete</a>
-                </td>
-            </tr>
-        <?php } ?>
-        </tbody>
-    </table>
+<div class="row">
+    <div class="col-md-3">
+        <label>Class</label>
+        <select name="class_id" class="form-control" required onchange="this.form.submit()">
+            <option value="">Select</option>
+            <?php
+            $c = mysqli_query($conn,"SELECT * FROM classes ORDER BY name");
+            while ($r = mysqli_fetch_assoc($c)) {
+                $sel = ($class_id==$r['id'])?'selected':'';
+                echo "<option value='{$r['id']}' $sel>{$r['name']}</option>";
+            }
+            ?>
+        </select>
+    </div>
+
+    <div class="col-md-3">
+        <label>Academic Year</label>
+        <select name="academic_year_id" class="form-control" required>
+            <option value="">Select</option>
+            <?php
+            if ($class_id) {
+                $ay = mysqli_query($conn,
+                    "SELECT id, academic_year
+                     FROM academic_years
+                     WHERE class_id=$class_id"
+                );
+                while ($r = mysqli_fetch_assoc($ay)) {
+                    $sel = ($academic_year_id==$r['id'])?'selected':'';
+                    echo "<option value='{$r['id']}' $sel>{$r['academic_year']}</option>";
+                }
+            }
+            ?>
+        </select>
+    </div>
+
+    <div class="col-md-2">
+        <label>Roll No</label>
+        <input type="text" name="roll_no" value="<?= $roll_no ?>" class="form-control" required>
+    </div>
+
+    <div class="col-md-2">
+        <label>Name</label>
+        <input type="text" name="name" value="<?= $name ?>" class="form-control" required>
+    </div>
+
+    <div class="col-md-2">
+        <label>Department</label>
+        <input type="text" name="department" value="<?= $department ?>" class="form-control" required>
+    </div>
 </div>
-</body>
-</html>
+
+<div class="mt-3">
+<button name="save" class="btn btn-success"><?= $edit_id?'Update':'Add' ?></button>
+<?php if ($edit_id) { ?>
+<a href="manage_students.php" class="btn btn-secondary">Cancel</a>
+<?php } ?>
+</div>
+</form>
+
+<table id="studentTable" class="table table-bordered table-striped">
+<thead class="table-dark">
+<tr>
+<th>ID</th>
+<th>Roll No</th>
+<th>Name</th>
+<th>Class</th>
+<th>Semester</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody>
+<?php
+$q = mysqli_query($conn,
+    "SELECT s.*, c.name AS class_name
+     FROM students s
+     JOIN classes c ON c.id=s.class_id
+     ORDER BY s.id DESC"
+);
+while ($r = mysqli_fetch_assoc($q)) {
+echo "<tr>
+<td>{$r['id']}</td>
+<td>{$r['roll_no']}</td>
+<td>{$r['name']}</td>
+<td>{$r['class_name']}</td>
+<td>{$r['semester']}</td>
+<td>
+<a href='manage_students.php?edit={$r['id']}' class='btn btn-sm btn-warning'>Edit</a>
+<a href='manage_students.php?delete={$r['id']}' class='btn btn-sm btn-danger'
+onclick=\"return confirm('Delete?')\">Delete</a>
+</td>
+</tr>";
+}
+?>
+</tbody>
+</table>
+</div>
+
+<?php include('../includes/footer.php'); ?>
+
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script>
+$(function(){ $('#studentTable').DataTable(); });
+</script>
